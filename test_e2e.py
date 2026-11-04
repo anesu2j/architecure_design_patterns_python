@@ -7,6 +7,8 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
+from singleton.request import Requests
+
 ROOT = Path(__file__).resolve().parent
 os.chdir(ROOT)
 
@@ -105,6 +107,15 @@ class DietFlowTest(unittest.TestCase):
                 if method in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
                     found.add((rule.rule, method))
         self.assertEqual(found, COVERED_ROUTES)
+
+    def test_every_api_route_uses_request_log_decorator(self):
+        for rule in app.url_map.iter_rules():
+            if rule.rule.startswith("/static"):
+                continue
+            self.assertTrue(
+                hasattr(app.view_functions[rule.endpoint], "__wrapped__"),
+                rule.rule,
+            )
 
     def test_activities_catalog_and_validation(self):
         listed = self.client.get("/activities")
@@ -448,10 +459,14 @@ class DietFlowTest(unittest.TestCase):
             self.assertGreater(body["daily_targets"][key], 0)
 
     def test_request_stats(self):
+        requests = Requests.get_instance()
         before = self.client.get("/stats")
         self.assertEqual(before.status_code, 200)
         self.assertEqual(before.get_json()["last_path"], "/stats")
         self.assertGreaterEqual(before.get_json()["count"], 1)
+        self.assertIs(Requests.get_instance(), requests)
+        self.assertEqual(requests.count, before.get_json()["count"])
+        self.assertEqual(requests.last_path, "/stats")
 
         self.client.get("/activities")
         after = self.client.get("/stats").get_json()
